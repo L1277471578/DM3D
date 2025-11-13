@@ -7,8 +7,11 @@
 We will release the paper and code soon!
 
 ## Overview
-<img src="![幻灯片2](https://github.com/user-attachments/assets/b443f991-49c9-4856-bae1-97b7a218be31)" width="80%" />
 
+![幻灯片2](https://github.com/user-attachments/assets/3c1d90d7-642d-4b05-8bfa-e6a865265e1a)
+
+
+<img src="(https://github.com/user-attachments/assets/3c1d90d7-642d-4b05-8bfa-e6a865265e1a.jpg" width="80%" />
 
 ##   Requirements
 
@@ -45,8 +48,12 @@ To train Mamba3D on ScanObjectNN/Modelnet40 from scratch, run:
 python main.py --config cfgs/finetune_modelnet.yaml --finetune_model False --scratch_model True
 ```
 
+
 ##  Acknowledgement
 We would like to thank the authors of [PointMamba](https://github.com/LMD0311/PointMamba), [Mamba3D](https://github.com/xhanxu/Mamba3D), and [Point-MAE](https://github.com/Pang-Yatian/Point-MAE) for their great works and repos.
+
+
+
 
 
 
