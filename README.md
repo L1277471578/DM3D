@@ -8,10 +8,17 @@ We will release the paper and code soon!
 
 ## Overview
 
-![幻灯片2](https://github.com/user-attachments/assets/3c1d90d7-642d-4b05-8bfa-e6a865265e1a)
 
 
-<img src="(https://github.com/user-attachments/assets/3c1d90d7-642d-4b05-8bfa-e6a865265e1a.jpg" width="80%" />
+
+<div align="center">
+  <img 
+    src="https://github.com/user-attachments/assets/fec2c940-c6bd-48be-9c5e-9c90bc454ec1"
+    alt="居中图片" 
+    width="576" 
+    height="465"
+  />
+</div>
 
 ##   Requirements
 
