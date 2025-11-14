@@ -72,9 +72,12 @@ python main.py --config cfgs/finetune_modelnet.yaml --test False  --ckpts cfgs/p
 ```
 
 ##  Testing 
-To test DM3D on ModelNet40, run:
 ```
-python main.py --config cfgs/finetune_modelnet.yaml --test True  --ckpts output/finetune_scan_objonly/0929-2059/ckpt-best.pth 
+# To test DM3D on ModelNet40, run:
+python main.py --config cfgs/finetune_modelnet.yaml --test True  --ckpts output/finetune_scan_objonly/0929-2059/ckpt-best.pth
+
+# Visualization of Part segmentation
+python part_segmentation/vis.py 
 ```
 
 ## Datasets
@@ -88,7 +91,6 @@ The overall directory structure should be:
 │   ├──ScanObjectNN/
 │   ├──ShapeNet55-34/
 │   ├──shapenetcore_partanno_segmentation_benchmark_v0_normal/
-├──datasets/
 ├──.......
 ```
 
