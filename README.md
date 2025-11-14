@@ -83,14 +83,18 @@ python part_segmentation/vis.py
 ## Datasets
 The overall directory structure should be:
 ```
-│Point-MAE/
+DM3D/
 ├──cfgs/
 ├──data/
 │   ├──ModelNet/
 │   ├──ModelNetFewshot/
 │   ├──ScanObjectNN/
 │   ├──ShapeNet55-34/
-│   ├──shapenetcore_partanno_segmentation_benchmark_v0_normal/
+├──.......
+├──part_segmentation/
+│   ├──cfgs/
+│   ├──data/
+│   ├──├──shapenetcore_partanno_segmentation_benchmark_v0_normal/
 ├──.......
 ```
 
