@@ -1,32 +1,33 @@
 # DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding
 
-## Will do
-- ⏳ The paper will be released soon
-- ⏳ release the code...
+## 	📝 To do 
+- ✅ Release the paper
+- ✅ Release the code
+- ✅ Release the pre-training weights
+- ⏳ Update code...
   
-We will release the paper and code soon!
-
-## Overview
+If this project is helpful to you, please support it by giving it a ⭐ star and and a 💬 citation
 
 
+## Abstract
 
+State Space Models (SSMs) demonstrate significant potential for long-sequence modeling, but their reliance on input order conflicts with the irregular nature of point clouds. Existing approaches often rely on predefined serialization strategies, which cannot adjust based on diverse geometric structures. To overcome this limitation, we propose DM3D, a deformable Mamba architecture for point cloud understanding. Specifically, DM3D introduces an offset-guided Gaussian sequencing mechanism that unifies local resampling and global reordering within a deformable scan. The Gaussian-based KNN Resampling (GKR) enhances structural awareness by adaptively reorganizing neighboring points, while the Gaussian-based Differentiable Reordering (GDR) enables end-to-end optimization of serialization order. Furthermore, a Tri-Path Frequency Fusion module enhances feature complementarity and reduces aliasing. Together, these components enable structure-adaptive serialization of point clouds. Extensive experiments on benchmark datasets show that DM3D achieves state-of-the-art performance in classification, few-shot learning, and part segmentation, demonstrating that adaptive serialization effectively unlocks the potential of SSMs for point cloud understanding.
 
+## Overview 
 <div align="center">
   <img 
-    src="https://github.com/user-attachments/assets/fec2c940-c6bd-48be-9c5e-9c90bc454ec1"
+    src="https://github.com/user-attachments/assets/f90a9a8b-eb6c-42c1-a3af-c88ea20f2b7b"
     alt="居中图片" 
-    width="576" 
-    height="465"
+    width="1036" 
+    height="837"
   />
 </div>
 
 
-##   Requirements
+##  🌈 Requirements
 
 Tested on:   
-PyTorch == 1.13.1   
-python == 3.8    
-CUDA == 11.7
+PyTorch == 1.13.1   python == 3.8    CUDA == 11.7
 
 ```
 pip install -r requirements.txt
@@ -48,7 +49,7 @@ pip install causal-conv1d==1.1.1
 pip install mamba-ssm==1.1.1
 ```
 
-## Training
+## 🚀 Training
 ###  Training from scratch
 To train DM3D from scratch, run:
 ```
@@ -71,7 +72,7 @@ python part_segmentation/train_partseg.py --config cfgs/config.yaml --pretrain_w
 python main.py --config cfgs/finetune_modelnet.yaml --test False  --ckpts cfgs/pretrain_pointmae.pth --finetune_model True --scratch_model False 
 ```
 
-##  Testing 
+##  🎯 Testing 
 ```
 # To test DM3D on ModelNet40, run:
 python main.py --config cfgs/finetune_modelnet.yaml --test True  --ckpts output/finetune_scan_objonly/0929-2059/ckpt-best.pth
@@ -80,7 +81,7 @@ python main.py --config cfgs/finetune_modelnet.yaml --test True  --ckpts output/
 python part_segmentation/vis.py 
 ```
 
-## Datasets
+## 📁 Datasets
 The overall directory structure should be:
 ```
 DM3D/
@@ -153,10 +154,10 @@ Download: Please download the data from the [official website](https://hkust-vgd
 Download: Please download the data from [here](https://shapenet.cs.stanford.edu/media/shapenetcore_partanno_segmentation_benchmark_v0_normal.zip). 
 
 
-##  Acknowledgement
+## 🤝 Acknowledgement
 We would like to thank the authors of [PointMamba](https://github.com/LMD0311/PointMamba), [Mamba3D](https://github.com/xhanxu/Mamba3D), and [Point-MAE](https://github.com/Pang-Yatian/Point-MAE) for their great works and repos.
 
-
+ ​✨ Make the open source world a better place💝
 
 
 
