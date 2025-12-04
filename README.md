@@ -1,13 +1,20 @@
 # DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding
 
 ## 	📝 To do 
-- ✅ Release the paper
+- ✅ Release the [Paper](https://arxiv.org/abs/2512.03424)
 - ✅ Release the code
 - ✅ Release the pre-training weights
 - ⏳ Update code...
   
-If this project is helpful to you, please support it by giving it a ⭐ star and and a 💬 citation
-
+If this project is helpful to you, please support it by giving it a ⭐ star and and a 💬 citation:
+```
+@article{DM3D,
+      title={DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding}, 
+      author={Bin Liu and Chunyang Wang and Xuelian Liu},
+      year={2025},
+      journal={arXiv preprint arXiv:2512.03424},
+}
+```
 
 ## Abstract
 
