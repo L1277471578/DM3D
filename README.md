@@ -1,4 +1,4 @@
-# DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding
+# [DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding](https://arxiv.org/abs/2512.03424)
 
 ## 	📝 To do 
 - ✅ Release the [Paper](https://arxiv.org/abs/2512.03424)
