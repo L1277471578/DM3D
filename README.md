@@ -3,7 +3,7 @@
 ## 	📝 To do 
 - ✅ Release the [Paper](https://arxiv.org/abs/2512.03424)
 - ✅ Release the code
-- ✅ Release the pre-training weights
+- ⏳ Release the pre-training weights
 - ⏳ Update code...
   
 If this project is helpful to you, please support it by giving it a ⭐ star and and a 💬 citation:
