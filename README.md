@@ -1,4 +1,4 @@
-# [DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding](https://arxiv.org/abs/2512.03424)
+# [DM3D: Deformable Mamba via Offset-Guided Differentiable Scanning for Point Cloud Understanding](https://arxiv.org/abs/2512.03424)
 
 ## 	📝 To do 
 - ✅ Release the [Paper](https://arxiv.org/abs/2512.03424)
@@ -18,12 +18,13 @@ If this project is helpful to you, please support it by giving it a ⭐ star and
 
 ## Abstract
 
-State Space Models (SSMs) demonstrate significant potential for long-sequence modeling, but their reliance on input order conflicts with the irregular nature of point clouds. Existing approaches often rely on predefined serialization strategies, which cannot adjust based on diverse geometric structures. To overcome this limitation, we propose DM3D, a deformable Mamba architecture for point cloud understanding. Specifically, DM3D introduces an offset-guided Gaussian sequencing mechanism that unifies local resampling and global reordering within a deformable scan. The Gaussian-based KNN Resampling (GKR) enhances structural awareness by adaptively reorganizing neighboring points, while the Gaussian-based Differentiable Reordering (GDR) enables end-to-end optimization of serialization order. Furthermore, a Tri-Path Frequency Fusion module enhances feature complementarity and reduces aliasing. Together, these components enable structure-adaptive serialization of point clouds. Extensive experiments on benchmark datasets show that DM3D achieves state-of-the-art performance in classification, few-shot learning, and part segmentation, demonstrating that adaptive serialization effectively unlocks the potential of SSMs for point cloud understanding.
+
+State Space Models (SSMs) show significant potential for long-sequence modeling, but their reliance on input order conflicts with the irregular nature of point clouds. Existing approaches often rely on predefined serialization schemes whose fixed scanning patterns cannot adapt to diverse geometric structures. To address this limitation, we propose DM3D, a deformable Mamba architecture for point cloud understanding. Specifically, DM3D introduces an offset-guided differentiable scanning mechanism that jointly performs resampling and reordering. Deformable Spatial Resampling (DSR) enhances structural awareness by adaptively resampling local features, while the Gaussian-based Differentiable Reordering (GDR) enables end-to-end optimization of the serialization order. We further introduce a Continuity-Aware State Update (CASU) mechanism that modulates the state update based on local geometric continuity. In addition, a Tri-Path Fusion module facilitates complementary interactions among different SSM branches. Together, these designs enable structure-adaptive serialization for point clouds. Extensive experiments on benchmark datasets show that DM3D achieves state-of-the-art or highly competitive results on classification, few-shot learning, and part segmentation tasks, validating the effectiveness of adaptive serialization for point cloud understanding.
 
 ## Overview 
 <div align="center">
   <img 
-    src="https://github.com/user-attachments/assets/f90a9a8b-eb6c-42c1-a3af-c88ea20f2b7b"
+    src="https://github.com/user-attachments/assets/781010a3-d6d9-44b1-9ed7-9c272804b8fc"
     alt="居中图片" 
     width="1036" 
     height="837"
