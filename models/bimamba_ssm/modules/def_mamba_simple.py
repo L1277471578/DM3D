@@ -2,7 +2,7 @@
 
 import math
 from typing import Optional
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,8 +42,6 @@ from torchsort import soft_sort
 import faiss
 from torch_cluster import knn
 import time
-
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class ChannelShuffle(nn.Module):
@@ -58,36 +56,12 @@ class ChannelShuffle(nn.Module):
         x = torch.transpose(x, 1, 2).contiguous()
         return x.view(batch, channels, length)
 
-class FrequencyEnhanceBlock(nn.Module):
-    def __init__(self, in_channels: int,groups=32) -> None:
-        super().__init__()
-        # 2 * in_channels
-        self.conv = nn.Conv1d(2 * in_channels, 2 * in_channels, kernel_size=1,groups=groups)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, C, L]
-        fft_result = torch.fft.fft(x, dim=-1)   # 1D FFT
-        real, imag = fft_result.real, fft_result.imag  # [B,C,L]
-
-        freq_cat = torch.cat([real, imag], dim=1)  # [B,2C,L]
-        freq_out = self.conv(freq_cat)             # [B,2C,L]
-
-        c = freq_out.shape[1] // 2
-        real_new = freq_out[:, :c, :]
-        imag_new = freq_out[:, c:, :]
-
-        complex_tensor = torch.complex(real_new, imag_new)
-        # IFFT
-        x_out = torch.fft.ifft(complex_tensor, dim=-1)  # [B,C,L]
-        return x_out.real
-
-
 class AttentiveAdaptiveFusion(nn.Module):
     def __init__(self, dim: int, bias: bool = False,groups=32) -> None:
         super().__init__()
 
         self.fuse_proj = nn.Conv1d(dim * 3, dim, kernel_size=1, bias=bias,groups=groups)
-        self.freq_enhance = FrequencyEnhanceBlock(in_channels=dim,groups=groups)
+        # self.freq_enhance = FrequencyEnhanceBlock(in_channels=dim,groups=groups)
         self.ChannelShuffle =ChannelShuffle(groups)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
@@ -101,50 +75,111 @@ class AttentiveAdaptiveFusion(nn.Module):
 
         fused = torch.cat([x_att, y_att, z_att], dim=1)  # [B, 3D, L]
         fused = self.fuse_proj(fused)  # [B, D, L]
-        fused = self.ChannelShuffle(fused)
+        out = self.ChannelShuffle(fused)
 
-        out = self.freq_enhance(fused)  # [B, D, L]
         return out
 
 
-import torch
-import torch.nn.functional as F
+def _build_local_window(base_idx, radius, N):
+    # base_idx: [B, N]
+    device = base_idx.device
+    offsets = torch.arange(-radius, radius + 1, device=device).view(1, 1, -1)  # [1,1,K]
+    local_index = base_idx.unsqueeze(-1) + offsets
+    local_index = local_index.clamp(0, N - 1).long()  # [B,N,K]
+    return local_index
 
-def sorting_global(features, delta_t, base_idx=None, sigma=1.0, eps=1e-8):
+
+def _gather_local_feat(features, local_index):
+    # features: [B, N, C]
+    B, N, C = features.shape
+    K = local_index.size(-1)
+    batch_idx = torch.arange(B, device=features.device).view(B, 1, 1).expand(B, N, K)
+    local_feat = features[batch_idx, local_index]  # [B,N,K,C]
+    return local_feat
+
+def sinkhorn_normalization(log_alpha, n_iters=5):
     """
-    input:
-        features : [B, N, C]
-        delta_t  : [B, N]
-        sigma    : float or Tensor
-    output:
-        permuted : [B, N, C]
+    log_alpha: [..., K, K]
+    returns doubly-stochastic matrix approximation
     """
+    for _ in range(n_iters):
+        log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=-1, keepdim=True)  # row norm
+        log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=-2, keepdim=True)  # col norm
+    return log_alpha.exp()
+
+
+def sorting_local_sinkhorn(features, delta_t, base_idx=None, radius=4, tau=0.2, n_iters=5, eps=1e-8):
     B, N, C = features.shape
     device = features.device
     dtype = features.dtype
 
-    i = base_idx.view(B, N, 1).to(dtype)
-    # print(i)
-    j = torch.arange(N, device=device, dtype=dtype).view(1, 1, N).expand(B, 1, N)
+    if delta_t.shape != (B, N):
+        raise ValueError(f"delta_t shape {delta_t.shape} != {(B, N)}")
 
-    new_order = i + delta_t.view(B, N, 1)  # [B, N, 1]
-    # print(pos)
+    if base_idx is None:
+        base_idx = torch.arange(N, device=device).unsqueeze(0).expand(B, N)
+    else:
+        if base_idx.shape != (B, N):
+            raise ValueError(f"base_idx shape {base_idx.shape} != {(B, N)}")
 
-    diff = new_order - j  # [B, N, N]
+    base_idx = base_idx.long()
+    new_order = base_idx.to(dtype) + delta_t  # [B,N]
 
-    if not torch.is_tensor(sigma):
-        sigma = torch.tensor(sigma, device=device, dtype=dtype)
-    sigma = sigma.view(-1)[0] if sigma.numel() == 1 else sigma
-    W = torch.exp(-0.5 * (diff / (sigma + 1e-12)) ** 2)  # [B, N, N]
+    local_index = _build_local_window(base_idx, radius, N)   # [B,N,K]
+    local_feat = _gather_local_feat(features, local_index)    # [B,N,K,C]
+    local_order = local_index.to(dtype)                       # [B,N,K]
 
-    W_sum = W.sum(dim=-1, keepdim=True).clamp_min(eps)  # [B, N, 1]
-    W = W / W_sum
+    # shifted positions of all local tokens
+    B_, N_, K = local_index.shape
+    batch_idx = torch.arange(B, device=device).view(B, 1, 1).expand(B, N, K)
+    local_shift = new_order[batch_idx, local_index]          # [B,N,K]
 
-    # batch: X' = W @ X
-    # [B, N, N] @ [B, N, C] -> [B, N, C]
-    permuted = torch.bmm(W, features)  # [B, N, C]
+    # cost[a,b] = distance between local token a's shifted position and local target index b
+    cost = (local_shift.unsqueeze(-1) - local_order.unsqueeze(-2)) ** 2  # [B,N,K,K]
 
-    return permuted,new_order
+    log_alpha = -cost / (tau + 1e-12)
+    P = sinkhorn_normalization(log_alpha, n_iters=n_iters)   # [B,N,K,K]
+
+    # center token is always at offset 0, i.e. row = radius
+    center_row = radius
+    W = P[:, :, center_row, :]                               # [B,N,K]
+    W = W / (W.sum(dim=-1, keepdim=True) + eps)
+
+    reordered = (local_feat * W.unsqueeze(-1)).sum(dim=2)
+    return reordered, new_order
+
+def sorting_local_gaussian(features, delta_t, base_idx=None, radius=4, sigma=1.0, eps=1e-8):
+    B, N, C = features.shape
+    device = features.device
+    dtype = features.dtype
+
+    if delta_t.shape != (B, N):
+        raise ValueError(f"delta_t shape {delta_t.shape} != {(B, N)}")
+
+    if base_idx is None:
+        base_idx = torch.arange(N, device=device).unsqueeze(0).expand(B, N)
+    else:
+        if base_idx.shape != (B, N):
+            raise ValueError(f"base_idx shape {base_idx.shape} != {(B, N)}")
+
+    base_idx = base_idx.long()
+    new_order = base_idx.to(dtype) + delta_t
+
+    offsets = torch.arange(-radius, radius + 1, device=device).view(1, 1, -1)
+    local_index = base_idx.unsqueeze(-1) + offsets
+    local_index = local_index.clamp(0, N - 1).long()
+    K = local_index.size(-1)
+
+    batch_idx = torch.arange(B, device=device).view(B, 1, 1).expand(B, N, K)
+    local_feat = features[batch_idx, local_index]
+    local_order = local_index.to(dtype)
+
+    diff = new_order.unsqueeze(-1) - local_order
+    W = torch.exp(-0.5 * (diff / (sigma + 1e-12)) ** 2)
+    W = W / (W.sum(dim=-1, keepdim=True) + eps)
+
+    permuted = (local_feat * W.unsqueeze(-1)).sum(dim=2)
+    return permuted, new_order
 
 
 class ChannelAttention(nn.Module):
@@ -164,159 +199,128 @@ class ChannelAttention(nn.Module):
         y = self.fc(y).view(b, c, 1)
         return x * y
 
-
 class DeformableScan3DForPointCloud(nn.Module):
     def __init__(
-            self,
-            in_channels,
-            # out_channels,
-            num_neighbors=16,
-            dp_scale=1,
-            use_ca=True,
-            resample_k=3,
-            enable_dp=True,
-            enable_dt=True,
-            expand=2,
+        self,
+        in_channels,
+        num_neighbors=4,
+        R_t=4,
+        dp_scale=1.0,
+        enable_dp=True,
+        enable_dt=True,
+        semantic_ratio=16,   # ??
+        use_ca=True,
     ):
         super().__init__()
+
         self.in_channels = in_channels
         self.num_neighbors = num_neighbors
+        self.R_t = R_t
         self.dp_scale = dp_scale
-        self.resample_k = resample_k
-        self.expand = expand
         self.enable_dp = enable_dp
         self.enable_dt = enable_dt
-        self.use_ca = use_ca
 
-        self.dynamic_conv = nn.Sequential(
-            nn.Conv1d(in_channels*2, in_channels, kernel_size=1),
-            nn.GELU(),
-        )
+        self.semantic_dim = max(4, in_channels // semantic_ratio)
+        self.semantic_proj = nn.Linear(in_channels, self.semantic_dim, bias=False)
+        offset_in_dim = in_channels + self.semantic_dim
 
-        #  △x,△y,△z,△t
         self.offset_net = nn.Sequential(
-            nn.Conv1d(in_channels*2, in_channels,kernel_size=5,padding=2,groups=in_channels),
-            nn.Conv1d(in_channels,in_channels//2,kernel_size=1),
-            ChannelAttention(in_channels//2) if use_ca else nn.Identity(),
-
+            nn.Conv1d(offset_in_dim, offset_in_dim, kernel_size=5, padding=2, groups=offset_in_dim),  # kernel 5 ? 3
+            nn.Conv1d(offset_in_dim, in_channels // 4, kernel_size=1),  #  channel
+            ChannelAttention(in_channels // 4) if use_ca else nn.Identity(),
             nn.ReLU(),
-            nn.Conv1d(in_channels//2, 4, kernel_size=1)
+            nn.Conv1d(in_channels // 4, 4, kernel_size=1),
         )
 
-        self.sigma = nn.Parameter(torch.tensor(0.2))
+        self.sigma_t = nn.Parameter(torch.tensor(0.2))
+        self.sigma_s = nn.Parameter(torch.tensor(1.0))
+        self._save_counter = 0
+        self.save_interval = 12
 
-
-    def knn_resample(self, new_coord, original_coord, original_feat, batch, k=3, temp=0.04):
-
-        # assert new_coord.device == original_coord.device == original_feat.device == batch.device
-
-        batch_center = batch[:new_coord.size(0)]  # [M]
-        dists = torch.cdist(new_coord, original_coord)  # [M, N]
-
-        #  [M, N]
-        mask = batch_center.unsqueeze(1) != batch.unsqueeze(0)
-        dists = dists.masked_fill(mask.cuda(), float('inf'))
-
-        topk = torch.topk(dists, k=k, dim=1, largest=False)
-        weights = F.softmax(-0.5*(topk.values / temp)**2, dim=1)  # [M, k]
-
-        knn_indices = topk.indices  # [M, k]
-        order = topk.indices[:,0]
-
-        knn_feat = original_feat[knn_indices.view(-1)]  # [M*k, C]
-        knn_feat = knn_feat.view(knn_indices.size(0), knn_indices.size(1), -1)  # [M, k, C]
-
-        # 加权平均
-        return (knn_feat * weights.unsqueeze(-1)).sum(dim=1)   # [M, C]
-
-    def forward(self, coords: torch.Tensor, feats: torch.Tensor, base_idx = None):
-        """
-        args:
-            coords:  [B, N, 3]
-            feats:  [B, N, C]
-            global_ctx:  [B, C]
-        """
+    def forward(self, coords, feats, base_idx=None):
         B, _, C = feats.shape
-        cls_token = feats[:, 0, :].view(B, 1, C)
-        feats = feats[:, 1:, :]  # B G C
+        device = feats.device
+
+        # ---- CLS ----
+        cls_token = feats[:, :1]
+        feats = feats[:, 1:]
+
         B, N, C = feats.shape
-        device = coords.device
 
-        #  [B*N, 3]
-        flat_coords = coords.view(-1, 3)
+        # ---- KNN ----
+        k = min(self.num_neighbors, N - 1)
+        idx = pointnet2_utils.ball_query(
+            0.1, k, coords.contiguous(), coords.contiguous()
+        ).view(B, N, k)
 
+        neighbor_feat = pointnet2_utils.grouping_operation(
+            feats.permute(0, 2, 1).contiguous(), idx
+        ).permute(0, 2, 3, 1)
         #
-        try:
-            k = min(self.num_neighbors, N - 1)
-            if k > 0:
-                idx = pointnet2_utils.ball_query(
-                    0.1, k, coords, coords
-                ).view(B, N, k)
-                idx = idx.to(device)
-            else:
-                idx = torch.zeros(B, N, k, device=device, dtype=torch.long)
-        except Exception as e:
-            print(f"ball_q: {e}")
-            idx = torch.zeros(B, N, self.num_neighbors, device=device, dtype=torch.long)
+        center_feat = feats.unsqueeze(2)
 
-        feats_trans = feats.permute(0, 2, 1).contiguous()
-        group_feat = pointnet2_utils.grouping_operation(feats_trans, idx)
-        group_feat = group_feat.permute(0, 2, 1, 3)
+        diff_feat = neighbor_feat - center_feat
+        local_mean = diff_feat.mean(dim=2)
+        local_var  = diff_feat.abs().mean(dim=2)
+        semantic_raw = (local_mean.abs() + local_var).detach()
+        semantic = self.semantic_proj(semantic_raw)
 
-        #  [B, N, C, k]
-        center_feat = feats.unsqueeze(-1).expand(-1, -1, -1, k)
+        #  offset
+        offset_input = torch.cat([local_mean + local_var + 0.1* feats, semantic], dim=-1)
+        offset = self.offset_net(offset_input.permute(0, 2, 1))
+        # offset = feats
+        offset = offset.permute(0, 2, 1)
+        # offset_np = offset.detach().cpu().numpy()
+        # first3 = offset_np[..., :3]
+        # fourth = offset_np[..., 3]
+        delta_p = torch.tanh(offset[..., :3]) * self.dp_scale if self.enable_dp else 0
+        delta_t = torch.tanh(offset[..., 3]) if self.enable_dt else 0
+        # self._save_counter += 1
+        # if self._save_counter % self.save_interval == 0:
+        #     with open('first3.txt', 'ab') as f:
+        #         np.savetxt(f, first3.reshape(-1, 3), fmt='%.6f', delimiter=' ')
+        #     with open('fourth.txt', 'ab') as f:
+        #         np.savetxt(f, fourth.reshape(-1, 1), fmt='%.6f', delimiter=' ')
+        #     with open('offset_p.txt', 'ab') as f:
+        #         np.savetxt(f, first3.reshape(-1, 3), fmt='%.6f', delimiter=' ')
+        #     with open('offset_t.txt', 'ab') as f:
+        #         np.savetxt(f, fourth.reshape(-1, 1), fmt='%.6f', delimiter=' ')
 
-        #  [B, N, 2C, k]
-        local_feat = torch.cat([center_feat, group_feat], dim=2)
+        # DSR
+        neighbor_pos = pointnet2_utils.grouping_operation(
+            coords.permute(0, 2, 1).contiguous(), idx
+        ).permute(0, 2, 3, 1)
 
-        # lcfa
-        local_feat_flat = local_feat.view(B * N, -1, k)
-        dynamic_weights = self.dynamic_conv(local_feat_flat)
+        center_pos = coords.unsqueeze(2)
+        pos_diff = neighbor_pos - (center_pos + delta_p.unsqueeze(2))
+        dist2 = (pos_diff ** 2).sum(dim=-1)
 
-        #  [B*N, C]
-        context_feat = torch.sum(group_feat.contiguous().view(B * N, C, k) * dynamic_weights, dim=2)
-
-        offset_input = torch.cat([
-            feats.reshape(B * N, C),
-            context_feat,
-        ], dim=1)
-
-        #  [1, 3C, B*N]
-        offset_input = offset_input.unsqueeze(0).permute(0, 2, 1)
-
-        #  [1, 4, B*N]
-        offset = self.offset_net(offset_input)
-
-        #  [B*N, 4]
-        offset = offset.squeeze(0).permute(1, 0)
-        offset = torch.tanh(offset) * self.dp_scale
-        delta_p = offset[:, :3] if self.enable_dp else torch.zeros_like(flat_coords, device=device)
-        delta_t = offset[:, 3] if self.enable_dt else torch.zeros(B * N, device=device)
-
-        new_coord = flat_coords + delta_p
-        batch_idx = torch.arange(B).repeat_interleave(N)
-        resampled_feat = self.knn_resample(
-            new_coord,
-            flat_coords,
-            feats.reshape(B * N, C),
-            batch_idx,
-            k=self.resample_k,
-            temp=self.sigma
-        )
-
-        resampled_feat += feats.reshape(B * N, C)
-
+        w = torch.softmax(-dist2 / (self.sigma_s + 1e-12), dim=2)
+        resampled_feat = (neighbor_feat * w.unsqueeze(-1)).sum(dim=2)
+        gate = torch.sigmoid(feats.norm(dim=-1,keepdim=True))
+        resampled_feat =  resampled_feat + feats*gate
 
         if self.enable_dt:
-            delta_t_batched = delta_t.view(B, N)
-            resampled_feat = resampled_feat.reshape(B, N, C)
-            resampled_feat,new_order = sorting_global(
-                resampled_feat, delta_t_batched, base_idx=base_idx, sigma=self.sigma
+            ## GDR
+            reordered_feat, new_order = sorting_local_gaussian(
+                resampled_feat,
+                delta_t,
+                base_idx=None,
+                radius=self.R_t,
+                sigma=self.sigma_t,
             )
 
-        resampled_feat = torch.cat((cls_token, resampled_feat), dim=1)  # B N+1 C
-        return resampled_feat,new_coord,new_order
+            ## sinkhorn
+            # reordered_feat, new_order = sorting_local_sinkhorn(
+            #     resampled_feat, delta_t, base_idx=base_idx,
+            #     radius=self.num_neighbors, tau=self.sigma_t,
+            #     n_iters=5)
+        else:
+            reordered_feat = resampled_feat
+            new_order = None
 
+        out = torch.cat([cls_token, reordered_feat], dim=1)
+        return out, coords + delta_p, new_order
 
 class Mamba(nn.Module):
     def __init__(
@@ -340,7 +344,7 @@ class Mamba(nn.Module):
             mamba_type="v3",
             enable_dp=False,
             enable_dt=False,
-            num_neighbors = 8
+            # num_neighbors = 8
     ):
 
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -356,7 +360,7 @@ class Mamba(nn.Module):
         self.mamba_type = mamba_type
         self.enable_dp= enable_dp
         self.enable_dt =enable_dt
-        self.num_neighbors = num_neighbors
+        # self.num_neighbors = num_neighbors
 
         self.in_proj = nn.Linear(self.d_model, self.d_inner * 2, bias=bias, **factory_kwargs)
 
@@ -442,13 +446,13 @@ class Mamba(nn.Module):
         self.D_b._no_weight_decay = True
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
         #
-        # # 可变形SSM参数
+        # # ???SSM??
         self.conv1d_d = nn.Conv1d(
-            in_channels=self.d_inner,
+            in_channels=self.d_inner//2,
             out_channels=self.d_inner,
             bias=conv_bias,
             kernel_size=3,
-            groups=self.d_inner,
+            groups=self.d_inner//2,
             padding=1,
             **factory_kwargs,)
 
@@ -475,17 +479,12 @@ class Mamba(nn.Module):
 
         self.point_deform_module = DeformableScan3DForPointCloud(
             in_channels=self.d_model,
-            # out_channels=self.d_inner,
-            num_neighbors=self.num_neighbors,
             dp_scale=1,
-            use_ca=True,
-            resample_k=3,
-            expand=self.expand,
+            # resample_k=3,
+            # expand=self.expand,
             enable_dp=self.enable_dp,
             enable_dt=self.enable_dt,
         )
-
-        self.linear = nn.Conv1d(self.d_model, self.d_inner,kernel_size=1,bias=True)
 
         self.AttentiveAdaptiveFusion = AttentiveAdaptiveFusion(dim=768,groups=128)
 
@@ -585,12 +584,7 @@ class Mamba(nn.Module):
                 )
 
                 new_point_feat,new_coord ,new_order = self.point_deform_module(coords=coords, feats=hidden_states, base_idx=base_idx)
-
                 new_point_feat = new_point_feat.permute(0, 2, 1)
-                new_point_feat = self.linear(new_point_feat)
-                # feat_out = new_point_feat.reshape(batch, seqlen, -1)  # [N, C']
-                # new_point_feat = new_point_feat.permute(0, 2, 1)
-                # x_deform = rearrange(feat_out, "(b l) d -> b d l", b=batch, l=seqlen)
 
                 #  conv1d_d + act
                 x_deform_conv = self.act(self.conv1d_d(new_point_feat))  # [B, D_inner, L]
@@ -616,7 +610,19 @@ class Mamba(nn.Module):
                 C_d = rearrange(C_d, "(b l) dstate -> b dstate l", b=batch, l=seqlen).contiguous()
                 dt_d = rearrange(dt_d, "d (b l) -> b d l", l=seqlen)
 
-                #  selective_scan_fn： out_def [B, D_def, L]
+                # dt_d: [B, D_inner, L]
+                dt_cls = dt_d[:, :, :1]  # [B, D_inner, 1]
+                dt_point = dt_d[:, :, 1:]  # [B, D_inner, N]
+                # CASU
+                dist = torch.norm(new_coord[:,1:]-new_coord[:,:-1],dim=-1)
+                dist = F.pad(dist , (1,0 ), value=0.0)
+                geo_scale = 1.0 + torch.tanh(dist)
+
+                dt_point = dt_point * geo_scale.unsqueeze(1)
+
+                dt_d = torch.cat([dt_cls, dt_point],dim=2)
+
+                #  selective_scan_fn? out_def [B, D_def, L]
                 out_def = selective_scan_fn(
                     x_deform_conv,
                     dt_d,
@@ -634,7 +640,6 @@ class Mamba(nn.Module):
                 out = F.linear(rearrange(out, "b d l -> b l d"), self.out_proj.weight, self.out_proj.bias)
 
                 return out, new_coord, new_order
-
 
             else:
                 out = mamba_inner_fn_no_out_proj(
