@@ -9,8 +9,8 @@
 If this project is helpful to you, please support it by giving it a ⭐ star and and a 💬 citation:
 ```
 @article{DM3D,
-      title={DM3D: Deformable Mamba via Offset-Guided Gaussian Sequencing for Point Cloud Understanding}, 
-      author={Bin Liu and Chunyang Wang and Xuelian Liu},
+      title={DM3D: Dynamic Mamba via Offset-Guided Feature Resampling for Point Cloud Understanding}, 
+      author={Bin Liu and Chunyang Wang and Xuelian Liu and Xuemei Li and Ge Zhang},
       year={2025},
       journal={arXiv preprint arXiv:2512.03424},
 }
