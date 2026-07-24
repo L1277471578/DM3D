@@ -1,4 +1,4 @@
-# [DM3D: Deformable Mamba via Offset-Guided Differentiable Scanning for Point Cloud Understanding](https://arxiv.org/abs/2512.03424)
+# [DM3D: Dynamic Mamba via Offset-Guided Feature Resampling for Point Cloud Understanding](https://arxiv.org/abs/2512.03424)
 
 ## 	📝 To do 
 - ✅ Release the [Paper](https://arxiv.org/abs/2512.03424)
@@ -19,12 +19,16 @@ If this project is helpful to you, please support it by giving it a ⭐ star and
 ## Abstract
 
 
-State Space Models (SSMs) show significant potential for long-sequence modeling, but their reliance on input order conflicts with the irregular nature of point clouds. Existing approaches often rely on predefined serialization schemes whose fixed scanning patterns cannot adapt to diverse geometric structures. To address this limitation, we propose DM3D, a deformable Mamba architecture for point cloud understanding. Specifically, DM3D introduces an offset-guided differentiable scanning mechanism that jointly performs resampling and reordering. Deformable Spatial Resampling (DSR) enhances structural awareness by adaptively resampling local features, while the Gaussian-based Differentiable Reordering (GDR) enables end-to-end optimization of the serialization order. We further introduce a Continuity-Aware State Update (CASU) mechanism that modulates the state update based on local geometric continuity. In addition, a Tri-Path Fusion module facilitates complementary interactions among different SSM branches. Together, these designs enable structure-adaptive serialization for point clouds. Extensive experiments on benchmark datasets show that DM3D achieves state-of-the-art or highly competitive results on classification, few-shot learning, and part segmentation tasks, validating the effectiveness of adaptive serialization for point cloud understanding.
+State Space Models (SSMs) model long token sequences of point cloud with linear complexity, but require an unordered point
+cloud to be serialized. Existing methods mainly address this requirement by designing or learning a better token order. Even
+a well-constructed order, however, cannot preserve every local relation on an irregular 3D surface: a fixed sequence may still
+mix points that are close in index but distant in 3D or belong to different object parts. We propose DM3D, a dynamic Mamba
+architecture that preserves the base token order while adapting local feature support and state propagation. First, according to local feature context, DM3D learns spatial and sequence offsets without constructing a global permutation. Then, spatial offsets adjust the sampling anchors in 3D space, whereas sequence offsets guide feature resampling within a local sequence window, which lets different slots draw from overlapping local supports while retaining their identities. This design preserves the global prior of the original traversal, allowing each token to aggregate a more suitable local context. Second, the state update is modulated by the 3D distance between points at adjacent sequence positions, thereby reducing information propagation when these points are spatially far apart. DM3D reaches 95.2% accuracy on the ModelNet40, 93.3% accuracy on the PB T50 RS split of ScanObjectNN, and 84.8% class mIoU on ShapeNetPart. Extensive experiments on benchmark datasets show that DM3D achieves strong and competitive performance, validating the effectiveness of local feature adaptation for point cloud understanding. 
 
 ## Overview 
 <div align="center">
   <img 
-    src="https://github.com/user-attachments/assets/781010a3-d6d9-44b1-9ed7-9c272804b8fc"
+    src="https://github.com/user-attachments/assets/a1f5ff69-40f5-4808-a133-4a56cde22e63" 
     alt="居中图片" 
     width="1036" 
     height="837"
